@@ -149,10 +149,6 @@ int main(void)
         state = state.play(result.value());
         cerr << state;
 
-        // Result result_opp = alpha_beta(state, 3, -INT32_MAX, INT32_MAX);
-        // for (const auto cell : state.children()) cerr << cell << ','; cerr << endl;
-        // cerr << "score=" << result_opp.score << " cell=" << result_opp.cell << endl;
-
         // Output a column index to drop the chip in. Append message to show in the viewer.
         cout << result.value() << endl;
     }
