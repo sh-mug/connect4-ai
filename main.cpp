@@ -13,12 +13,22 @@ constexpr board_t end_board = 0x7FFFFFFFFFFFFFFF;
 struct State {
     board_t me, opp;
     score_opt eval() {
-        if (any_of(lines.begin(), lines.end(), [&](const board_t &line) { return (me & line) == line; })) return 1;
-        if (any_of(lines.begin(), lines.end(), [&](const board_t &line) { return (opp & line) == line; })) return -1;
+        if (any_of(lines.begin(), lines.end(), [&](const board_t &line) { return (me & line) == line; })) return 2;
+        if (any_of(lines.begin(), lines.end(), [&](const board_t &line) { return (opp & line) == line; })) return -2;
         if ((me | opp) == end_board) return 0;
         return nullopt;
     }
     score_t eval_approx() {
+        // return 0;
+        array<int, 4> cnt_me = {}, cnt_opp = {};
+        for (const board_t &line : lines) {
+            ++cnt_me[__builtin_popcountll(me & line)];
+            ++cnt_opp[__builtin_popcountll(opp & line)];
+        }
+        for (int cnt = 3; cnt >= 0; --cnt) {
+            if (cnt_me[cnt] > cnt_opp[cnt]) return 1;
+            if (cnt_me[cnt] < cnt_opp[cnt]) return -1;
+        }
         return 0;
     }
     State reversed() {
@@ -36,10 +46,8 @@ struct State {
         }
         return res;
     }
-    vector<State> played() {
-        vector<State> res;
-        for (const cell_t cell : this->children()) res.push_back(State{opp | (1ULL << cell), me});
-        return res;
+    inline State played(cell_t cell) {
+        return State{opp, me | (1ULL << cell)};
     }
     State play(int row) {
         State state = this->reversed();
@@ -83,25 +91,25 @@ struct Result {
     bool operator>=(const Result &rhs) const { return score >= rhs.score; }
 };
 std::map<std::pair<State, int>, Result> memo;
-Result alpha_beta(State state, int depth, Result alpha, Result beta) {
+Result alpha_beta(State state, int depth, score_t alpha, score_t beta) {
     auto memo_input = std::make_pair(state, depth);
     if (memo.find(memo_input) != memo.end()) return memo[memo_input];
     
     score_opt h = state.eval();
     if (h) {
-        cerr << "depth=" << depth << " alpha=" << alpha.score << " beta=" << beta.score << endl;
-        for (const auto cell : state.children()) cerr << cell << ','; cerr << endl;
-        cerr << state << endl;
-        
         return memo[memo_input] = Result{h.value(), -1};
     }
-    if (depth == 0) return memo[memo_input] = Result{state.eval_approx(), state.children().front()};
+    if (depth == 0) {
+        const auto children = state.children();
+        return memo[memo_input] = Result{state.eval_approx(), children[children.size() >> 1]};
+    }
 
-    Result res = alpha;
-    for (State next : state.played()) {
-        Result value_rev = alpha_beta(next, depth - 1, -beta, -alpha);
-        res = max(res, -value_rev);
-        if (res >= beta) return memo[memo_input] = res;
+    Result res = Result{alpha, -1};
+    for (const cell_t next_turn : state.children()) {
+        State next = state.played(next_turn);
+        Result next_res = -alpha_beta(next, depth - 1, -beta, -alpha);
+        if (res < next_res) res = Result{next_res.score, next_turn};
+        if (res.score >= beta) return memo[memo_input] = res;
     }
     return memo[memo_input] = res;
 }
@@ -135,13 +143,13 @@ int main(void)
 
         // Write an action using cout. DON'T FORGET THE "<< endl"
         // To debug: cerr << "Debug messages..." << endl;
-        Result result = alpha_beta(state, 3, -INF, INF);
+        Result result = alpha_beta(state, 4, -INT32_MAX, INT32_MAX);
         for (const auto cell : state.children()) cerr << cell << ','; cerr << endl;
         cerr << "score=" << result.score << " cell=" << result.cell << endl;
         state = state.play(result.value());
         cerr << state;
 
-        // Result result_opp = alpha_beta(state, 3, -INF, INF);
+        // Result result_opp = alpha_beta(state, 3, -INT32_MAX, INT32_MAX);
         // for (const auto cell : state.children()) cerr << cell << ','; cerr << endl;
         // cerr << "score=" << result_opp.score << " cell=" << result_opp.cell << endl;
 
