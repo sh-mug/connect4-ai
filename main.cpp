@@ -34,6 +34,7 @@ MMNMM::splitmix64 engine(std::random_device{}());
 
 struct State {
     board_t me, opp;
+    inline int count_fill() { return __builtin_popcountll(me | opp); }
     score_opt eval() {
         if (any_of(lines.begin(), lines.end(), [&](const board_t &line) { return (me & line) == line; })) return 2;
         if (any_of(lines.begin(), lines.end(), [&](const board_t &line) { return (opp & line) == line; })) return -2;
@@ -66,7 +67,7 @@ struct State {
                 break;
             }
         }
-        if (__builtin_popcountll(filled) == 1) res.push_back(-2);
+        if (count_fill() == 1) res.push_back(-2);
         return res;
     }
     State played(cell_t cell) {
@@ -186,8 +187,8 @@ struct MCTSnode {
         }
         return &children->at(largest_idx);
     }
-    void learn() {
-        clock_t deadline = TL_PER_ROUND + clock();
+    void learn(long TL) {
+        clock_t deadline = TL + clock();
         int num_sims = 0;
         while ((++num_sims & 0xF) || clock() < deadline) {
             eval();
@@ -258,7 +259,7 @@ int main(void)
 
         // Write an action using cout. DON'T FORGET THE "<< endl"
         // To debug: cerr << "Debug messages..." << endl;
-        node_itr->learn();
+        node_itr->learn(node_itr->state.count_fill() <= 1 ? 0.990 * CLOCKS_PER_SEC : TL_PER_ROUND);
         node_itr = node_itr->choose_node();
         cerr << *node_itr;
         cout << to_row(node_itr->turn) << endl;
