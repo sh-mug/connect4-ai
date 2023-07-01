@@ -57,7 +57,7 @@ struct State {
     State reversed() {
         return State{opp, me};
     }
-    vector<cell_t> children() {
+    vector<cell_t> children(bool can_steal) {
         vector<cell_t> res;
         board_t filled = me | opp;
         for (int x = 0; x < X; ++x) {
@@ -67,7 +67,7 @@ struct State {
                 break;
             }
         }
-        if (count_fill() == 1) res.push_back(-2);
+        if (can_steal) res.push_back(-2);
         return res;
     }
     State played(cell_t cell) {
@@ -114,12 +114,12 @@ Result alpha_beta(State state, int depth, score_t alpha, score_t beta) {
         return memo[memo_input] = Result{h.value(), -1};
     }
     if (depth == 0) {
-        const auto children = state.children();
+        const auto children = state.children(false);
         return memo[memo_input] = Result{state.eval_approx(), children[children.size() >> 1]};
     }
 
     Result res = Result{alpha, -1};
-    for (const cell_t next_turn : state.children()) {
+    for (const cell_t next_turn : state.children(false)) {
         State next = state.played(next_turn);
         Result next_res = -alpha_beta(next, depth - 1, -beta, -alpha);
         if (res < next_res) res = Result{next_res.score, next_turn};
@@ -134,6 +134,7 @@ struct MCTSnode {
     int cnt;
     unique_ptr<vector<MCTSnode>> children;
     int turn;
+    int depth;
 
     reward_t add_reward(reward_t added_reward) {
         assert(-2 <= added_reward && added_reward <= 2);
@@ -160,7 +161,7 @@ struct MCTSnode {
         State now_state = state;
         score_opt h;
         while (!(h = now_state.eval())) {
-            auto next_turns = now_state.children();
+            auto next_turns = now_state.children(depth == 1);
             auto next_turn = next_turns[engine() % next_turns.size()];
             now_state = now_state.played(next_turn);
             is_me = !is_me;
@@ -169,8 +170,8 @@ struct MCTSnode {
     }
     void expand() {
         children = make_unique<vector<MCTSnode>>();
-        for (cell_t next_turn : state.children()) {
-            children->push_back(MCTSnode{state.played(next_turn), next_turn});
+        for (cell_t next_turn : state.children(depth == 1)) {
+            children->push_back(MCTSnode{state.played(next_turn), next_turn, depth + 1});
         }
     }
     MCTSnode *largest_ucb_child() {
@@ -187,6 +188,18 @@ struct MCTSnode {
         }
         return &children->at(largest_idx);
     }
+    MCTSnode *max_cnt_child() {
+        int largest = -1e9;
+        size_t largest_idx = 0;
+        for (size_t i = 0; i < children->size(); ++i) {
+            auto &child = children->at(i);
+            if (largest < child.cnt) {
+                largest = child.cnt;
+                largest_idx = i;
+            }
+        }
+        return &children->at(largest_idx);
+    }
     void learn(long TL) {
         clock_t deadline = TL + clock();
         int num_sims = 0;
@@ -196,16 +209,15 @@ struct MCTSnode {
         cerr << "#sim=" << num_sims << " reward=" << reward << endl;
     }
     MCTSnode *choose_node() {
-        MCTSnode *largest_child = largest_ucb_child();
+        MCTSnode *largest_child = max_cnt_child();
         for (const auto &child : *children) {
             cerr << child.turn << ' ' << child.cnt << ' ' << child.reward << endl;
         }
         return largest_child;
     }
     
-    MCTSnode(State state, cell_t turn) : state(state), reward(0), cnt(0), children(nullptr), turn(turn) {}
-    MCTSnode(State state) : state(state), reward(0), cnt(0), children(nullptr), turn(-1) {}
-    MCTSnode() : state(State{}), reward(0), cnt(0), children(nullptr), turn(-1) {}
+    MCTSnode(State state, cell_t turn, int depth) : state(state), reward(0), cnt(0), children(nullptr), turn(turn), depth(depth) {}
+    MCTSnode() : state(State{}), reward(0), cnt(0), children(nullptr), turn(-1), depth(0) {}
 };
 std::ostream& operator<<(std::ostream& os, const MCTSnode& node) {
     cerr << "reward=" << node.reward;
@@ -259,7 +271,7 @@ int main(void)
 
         // Write an action using cout. DON'T FORGET THE "<< endl"
         // To debug: cerr << "Debug messages..." << endl;
-        node_itr->learn(node_itr->state.count_fill() <= 1 ? 0.990 * CLOCKS_PER_SEC : TL_PER_ROUND);
+        node_itr->learn(node.depth <= 1 ? 0.950 * CLOCKS_PER_SEC : TL_PER_ROUND);
         node_itr = node_itr->choose_node();
         cerr << *node_itr;
         cout << to_row(node_itr->turn) << endl;
