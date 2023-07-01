@@ -11,7 +11,7 @@ constexpr int Y = 7, X = 9, L = 4;
 constexpr std::array<board_t, 126> lines = { 0x0000000000204081, 0x0000000010204080, 0x0000000810204000, 0x0000040810200000, 0x0002040810000000, 0x0102040800000000, 0x0000000000408102, 0x0000000020408100, 0x0000001020408000, 0x0000081020400000, 0x0004081020000000, 0x0204081000000000, 0x000000000000000f, 0x0000000000000780, 0x000000000003c000, 0x0000000001e00000, 0x00000000f0000000, 0x0000007800000000, 0x00003c0000000000, 0x001e000000000000, 0x0f00000000000000, 0x0000000001010101, 0x0000000080808080, 0x0000004040404000, 0x0000202020200000, 0x0010101010000000, 0x0808080800000000, 0x0000000000208208, 0x0000000010410400, 0x0000000820820000, 0x0000041041000000, 0x0002082080000000, 0x0104104000000000, 0x0000000000810204, 0x0000000040810200, 0x0000002040810000, 0x0000102040800000, 0x0008102040000000, 0x0408102000000000, 0x000000000000001e, 0x0000000000000f00, 0x0000000000078000, 0x0000000003c00000, 0x00000001e0000000, 0x000000f000000000, 0x0000780000000000, 0x003c000000000000, 0x1e00000000000000, 0x0000000002020202, 0x0000000101010100, 0x0000008080808000, 0x0000404040400000, 0x0020202020000000, 0x1010101000000000, 0x0000000000410410, 0x0000000020820800, 0x0000001041040000, 0x0000082082000000, 0x0004104100000000, 0x0208208000000000, 0x0000000001020408, 0x0000000081020400, 0x0000004081020000, 0x0000204081000000, 0x0010204080000000, 0x0810204000000000, 0x000000000000003c, 0x0000000000001e00, 0x00000000000f0000, 0x0000000007800000, 0x00000003c0000000, 0x000001e000000000, 0x0000f00000000000, 0x0078000000000000, 0x3c00000000000000, 0x0000000004040404, 0x0000000202020200, 0x0000010101010000, 0x0000808080800000, 0x0040404040000000, 0x2020202000000000, 0x0000000000820820, 0x0000000041041000, 0x0000002082080000, 0x0000104104000000, 0x0008208200000000, 0x0410410000000000, 0x0000000002040810, 0x0000000102040800, 0x0000008102040000, 0x0000408102000000, 0x0020408100000000, 0x1020408000000000, 0x0000000000000078, 0x0000000000003c00, 0x00000000001e0000, 0x000000000f000000, 0x0000000780000000, 0x000003c000000000, 0x0001e00000000000, 0x00f0000000000000, 0x7800000000000000, 0x0000000008080808, 0x0000000404040400, 0x0000020202020000, 0x0001010101000000, 0x0080808080000000, 0x4040404000000000, 0x0000000001041040, 0x0000000082082000, 0x0000004104100000, 0x0000208208000000, 0x0010410400000000, 0x0820820000000000, 0x0000000004081020, 0x0000000204081000, 0x0000010204080000, 0x0000810204000000, 0x0040810200000000, 0x2040810000000000, 0x0000000008102040, 0x0000000408102000, 0x0000020408100000, 0x0001020408000000, 0x0081020400000000, 0x4081020000000000, };
 constexpr board_t end_board = 0x7FFFFFFFFFFFFFFF;
 constexpr int EXPAND_COUNT = 10;
-constexpr reward_t C_UCB = 1;
+constexpr reward_t C_UCB = 1.414213562373;
 constexpr long TL_PER_ROUND = 0.090 * CLOCKS_PER_SEC;
 
 namespace MMNMM{
@@ -66,22 +66,12 @@ struct State {
                 break;
             }
         }
+        if (__builtin_popcountll(filled) == 1) res.push_back(-2);
         return res;
     }
-    inline State played(cell_t cell) {
-        return State{opp, me | (1ULL << cell)};
-    }
-    State play(int row) {
-        State state = this->reversed();
-        board_t filled = state.me | state.opp;
-        if (row == -2) return state.reversed();
-        if (row == -1) return State{};
-        if (0 <= row && row < X) {
-            board_t cell = 1ULL << (Y * row);
-            for (int y = 0; y < Y; ++y, cell <<= 1) if (!(filled & cell)) return State{state.me | cell, state.opp};
-        }
-        cerr << "[WARNING] unintended input: " << row << endl;
-        return state;
+    State played(cell_t cell) {
+        if (cell >= 0) return State{opp, me | (1ULL << cell)};
+        return State{me, opp};
     }
 
     State() : me(0), opp(0) {}
@@ -99,12 +89,13 @@ std::ostream& operator<<(std::ostream& os, const State& st) {
     return os;
 }
 
+inline int to_row(cell_t cell) {
+    if (cell >= 0) return cell / Y;
+    return cell;
+}
 struct Result {
     score_t score; cell_t cell;
-    int value() {
-        if (0 <= cell && cell < Y * X) return cell / Y;
-        return -1;
-    }
+    int row() { return to_row(cell); }
 
     Result() : score(0), cell(-1) {}
     Result(score_t score, cell_t cell) : score(score), cell(cell) {}
@@ -140,8 +131,8 @@ struct MCTSnode {
     State state;
     reward_t reward;
     int cnt;
-    optional<vector<MCTSnode>> children;
-    optional<int> turn;
+    unique_ptr<vector<MCTSnode>> children;
+    int turn;
 
     reward_t add_reward(reward_t added_reward) {
         assert(-2 <= added_reward && added_reward <= 2);
@@ -158,15 +149,15 @@ struct MCTSnode {
             if (cnt >= EXPAND_COUNT) expand();
             return add_reward(rollout_reward);
         } else {
-            MCTSnode &largest = largest_ucb_child();
-            reward_t child_reward = largest.eval();
+            MCTSnode *largest = largest_ucb_child();
+            reward_t child_reward = largest->eval();
             return add_reward(-child_reward);
         }
     }
     reward_t rollout() {
         bool is_me = true;
         State now_state = state;
-        score_opt h = nullopt;
+        score_opt h;
         while (!(h = now_state.eval())) {
             auto next_turns = now_state.children();
             auto next_turn = next_turns[engine() % next_turns.size()];
@@ -176,24 +167,24 @@ struct MCTSnode {
         return (is_me ? h.value() : -h.value());
     }
     void expand() {
-        children = vector<MCTSnode>{};
+        children = make_unique<vector<MCTSnode>>();
         for (cell_t next_turn : state.children()) {
-            children.value().push_back(MCTSnode(state.played(next_turn), next_turn));
+            children->push_back(MCTSnode{state.played(next_turn), next_turn});
         }
     }
-    MCTSnode &largest_ucb_child() {
+    MCTSnode *largest_ucb_child() {
         reward_t largest = -1e9;
         size_t largest_idx = 0;
-        for (size_t i = 0; i < children.value().size(); ++i) {
-            auto &child = children.value().at(i);
-            if (child.cnt == 0) return child;
-            reward_t ucb = (-child.reward / child.cnt) + C_UCB * sqrt(log(cnt) / cnt);
+        for (size_t i = 0; i < children->size(); ++i) {
+            auto &child = children->at(i);
+            if (child.cnt == 0) return &child;
+            reward_t ucb = (-child.reward / child.cnt) + C_UCB * sqrt(log((reward_t)cnt) / child.cnt);
             if (largest < ucb) {
                 largest = ucb;
                 largest_idx = i;
             }
         }
-        return children.value().at(largest_idx);
+        return &children->at(largest_idx);
     }
     void learn() {
         clock_t deadline = TL_PER_ROUND + clock();
@@ -203,22 +194,37 @@ struct MCTSnode {
         }
         cerr << "#sim=" << num_sims << " reward=" << reward << endl;
     }
-    Result choose_turn() {
-        MCTSnode &largest_child = largest_ucb_child();
-        for (auto &child : children.value()) {
-            cerr << "turn=" << child.turn.value() << " count=" << child.cnt << " reward=" << child.reward << endl;
+    MCTSnode *choose_node() {
+        MCTSnode *largest_child = largest_ucb_child();
+        for (const auto &child : *children) {
+            cerr << child.turn << ' ' << child.cnt << ' ' << child.reward << endl;
         }
-        return Result{(score_t)largest_child.reward, largest_child.turn.value()};
+        return largest_child;
     }
     
-    MCTSnode(State state, cell_t turn) : state(state), reward(0), cnt(0), children(nullopt), turn(turn) {}
-    MCTSnode(State state) : state(state), reward(0), cnt(0), children(nullopt), turn(nullopt) {}
-    MCTSnode() : state(State{}), reward(0), cnt(0), children(nullopt), turn(nullopt) {}
+    MCTSnode(State state, cell_t turn) : state(state), reward(0), cnt(0), children(nullptr), turn(turn) {}
+    MCTSnode(State state) : state(state), reward(0), cnt(0), children(nullptr), turn(-1) {}
+    MCTSnode() : state(State{}), reward(0), cnt(0), children(nullptr), turn(-1) {}
 };
+std::ostream& operator<<(std::ostream& os, const MCTSnode& node) {
+    cerr << "reward=" << node.reward;
+    cerr << " count=" << node.cnt;
+    cerr << " turn=" << node.turn << endl;
+    cerr << "children=";
+    if (!node.children) {
+        cerr << "null" << endl;
+    } else {
+        for (auto &child : *node.children) cerr << child.turn << ',';
+        cerr << endl;
+    }
+    cerr << node.state;
+    return os;
+}
 
 int main(void)
 {
-    State state;
+    MCTSnode node;
+    MCTSnode *node_itr = &node;
 
     int my_id; // 0 or 1 (Player 0 plays first)
     int opp_id; // if your index is 0, this will be 1, and vice versa
@@ -240,18 +246,24 @@ int main(void)
         }
         int opp_previous_action; // opponent's previous chosen column index (will be -1 for first player in the first turn)
         cin >> opp_previous_action;
-        state = state.play(opp_previous_action);
+        if (opp_previous_action != -1) {
+            if (!node_itr->children) node_itr->expand();
+            for (MCTSnode &child : *node_itr->children) {
+                if (to_row(child.turn) == opp_previous_action) {
+                    node_itr = &child;
+                    break;
+                }
+            }
+        }
 
         // Write an action using cout. DON'T FORGET THE "<< endl"
         // To debug: cerr << "Debug messages..." << endl;
-        MCTSnode node(state);
-        node.learn();
-        Result result = node.choose_turn();
-        cerr << "score=" << result.score << " cell=" << result.cell << endl;
-        state = state.play(result.value());
-        cerr << state;
+        node_itr->learn();
+        node_itr = node_itr->choose_node();
+        cerr << *node_itr;
+        cout << to_row(node_itr->turn) << endl;
 
         // Output a column index to drop the chip in. Append message to show in the viewer.
-        cout << result.value() << endl;
+        // cout << to_row(node.turn) << endl;
     }
 }
