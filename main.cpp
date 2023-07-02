@@ -234,10 +234,19 @@ std::ostream& operator<<(std::ostream& os, const MCTSnode& node) {
     return os;
 }
 
+atomic<bool> is_opp_entered(false);
+void bg_operation(MCTSnode *node) {
+    int num_sims = 0;
+    while ((++num_sims & 0xF) || !is_opp_entered) {
+        ++num_sims;
+        node->eval();
+    }
+    cerr << "#sim(background)=" << num_sims << endl;
+}
+
 int main(void)
 {
-    MCTSnode node;
-    MCTSnode *node_itr = &node;
+    MCTSnode *node = new MCTSnode;
 
     int my_id; // 0 or 1 (Player 0 plays first)
     int opp_id; // if your index is 0, this will be 1, and vice versa
@@ -245,6 +254,9 @@ int main(void)
 
     // game loop
     while (1) {
+        is_opp_entered = false;
+        thread bg_thread(bg_operation, node);
+
         int turn_index; // starts from 0; As the game progresses, first player gets [0,2,4,...] and second player gets [1,3,5,...]
         cin >> turn_index; cin.ignore();
         for (int i = 0; i < 7; i++) {
@@ -259,11 +271,15 @@ int main(void)
         }
         int opp_previous_action; // opponent's previous chosen column index (will be -1 for first player in the first turn)
         cin >> opp_previous_action;
+
+        is_opp_entered = true;
+        bg_thread.join();
+
         if (opp_previous_action != -1) {
-            if (!node_itr->children) node_itr->expand();
-            for (MCTSnode &child : *node_itr->children) {
+            if (!node->children) node->expand();
+            for (MCTSnode &child : *node->children) {
                 if (to_row(child.turn) == opp_previous_action) {
-                    node_itr = &child;
+                    node = &child;
                     break;
                 }
             }
@@ -271,10 +287,10 @@ int main(void)
 
         // Write an action using cout. DON'T FORGET THE "<< endl"
         // To debug: cerr << "Debug messages..." << endl;
-        node_itr->learn(node.depth <= 1 ? 0.950 * CLOCKS_PER_SEC : TL_PER_ROUND);
-        node_itr = node_itr->choose_node();
-        cerr << *node_itr;
-        cout << to_row(node_itr->turn) << endl;
+        node->learn(node->depth <= 1 ? 0.950 * CLOCKS_PER_SEC : TL_PER_ROUND);
+        node = node->choose_node();
+        cerr << *node;
+        cout << to_row(node->turn) << endl;
 
         // Output a column index to drop the chip in. Append message to show in the viewer.
         // cout << to_row(node.turn) << endl;
