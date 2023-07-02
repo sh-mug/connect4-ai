@@ -237,7 +237,7 @@ std::ostream& operator<<(std::ostream& os, const MCTSnode& node) {
 atomic<bool> is_opp_entered(false);
 void bg_operation(MCTSnode *node) {
     int num_sims = 0;
-    while ((++num_sims & 0xF) || !is_opp_entered) {
+    while (!is_opp_entered) {
         ++num_sims;
         node->eval();
     }
