@@ -1,9 +1,9 @@
 #include <bits/stdc++.h>
 using namespace std;
 
-using turn_t = char;
-using cell_t = int;
-using board_t = unsigned long long;
+// using turn_t = char;
+// using cell_t = int;
+using board_t = long long;
 using score_t = int;
 using score_opt = optional<score_t>;
 using reward_t = float;
@@ -60,12 +60,12 @@ struct State {
     State reversed() {
         return State{opp, me};
     }
-    vector<turn_t> children(bool can_steal) {
-        vector<turn_t> res;
+    vector<board_t> children(bool can_steal) {
+        vector<board_t> res;
         board_t filled = me | opp;
         for (int x = 0; x < X; ++x) {
-            turn_t cell = Y * x;
-            for (int y = 0; y < Y; ++y, ++cell) if (!(filled >> cell & 1)) {
+            board_t cell = 1LL << (Y * x);
+            for (int y = 0; y < Y; ++y, cell <<= 1) if (!(filled & cell)) {
                 res.push_back(cell);
                 break;
             }
@@ -73,8 +73,8 @@ struct State {
         if (can_steal) res.push_back(-2);
         return res;
     }
-    State played(turn_t cell) {
-        if (cell >= 0) return State{opp, me | (1ULL << cell)};
+    State played(board_t cell) {
+        if (cell >= 0) return State{opp, me | cell};
         return State{me, opp};
     }
 
@@ -85,7 +85,7 @@ struct State {
 std::ostream& operator<<(std::ostream& os, const State& st) {
     for (int y = Y - 1; y >= 0; --y) {
         for (int x = 0; x < X; ++x) {
-            board_t cell = 1ULL << (Y * x + y);
+            board_t cell = 1LL << (Y * x + y);
             os << (st.me & cell ? 'O' : st.opp & cell ? 'X' : '.')
                << (x + 1 == X ? '\n' : ' ');
         }
@@ -93,16 +93,16 @@ std::ostream& operator<<(std::ostream& os, const State& st) {
     return os;
 }
 
-inline int to_row(cell_t cell) {
-    if (cell >= 0) return cell / Y;
+inline int to_row(board_t cell) {
+    if (__builtin_popcountll(cell)) return (ffsll(cell) - 1) / Y;
     return cell;
 }
 struct Result {
-    score_t score; cell_t cell;
+    score_t score; board_t cell;
     int row() { return to_row(cell); }
 
     Result() : score(0), cell(-1) {}
-    Result(score_t score, cell_t cell) : score(score), cell(cell) {}
+    Result(score_t score, board_t cell) : score(score), cell(cell) {}
     Result operator-() const { return Result{-score, cell}; }
     bool operator<(const Result &rhs) const { return score < rhs.score; }
     bool operator>=(const Result &rhs) const { return score >= rhs.score; }
@@ -122,7 +122,7 @@ Result alpha_beta(State state, int depth, score_t alpha, score_t beta) {
     }
 
     Result res = Result{alpha, -1};
-    for (const turn_t next_turn : state.children(false)) {
+    for (const board_t next_turn : state.children(false)) {
         State next = state.played(next_turn);
         Result next_res = -alpha_beta(next, depth - 1, -beta, -alpha);
         if (res < next_res) res = Result{next_res.score, next_turn};
@@ -135,7 +135,8 @@ struct MCTSnode {
     State state;
     reward_t reward;
     int cnt;
-    char turn, depth;
+    board_t turn;
+    char depth;
     unique_ptr<vector<MCTSnode>> children;
 
     reward_t add_reward(reward_t added_reward) {
@@ -172,7 +173,7 @@ struct MCTSnode {
     }
     inline void expand() {
         children = make_unique<vector<MCTSnode>>();
-        for (cell_t next_turn : state.children(depth == 1)) {
+        for (board_t next_turn : state.children(depth == 1)) {
             children->push_back(MCTSnode{state.played(next_turn), next_turn, depth + 1});
         }
     }
@@ -212,12 +213,12 @@ struct MCTSnode {
     MCTSnode *choose_node() {
         MCTSnode *largest_child = max_cnt_child();
         for (const auto &child : *children) {
-            cerr << child.turn << ' ' << child.cnt << ' ' << child.reward << endl;
+            cerr << ffsll(child.turn) - 1 << ' ' << child.cnt << ' ' << child.reward << endl;
         }
         return largest_child;
     }
     
-    MCTSnode(State state, turn_t turn, char depth) : state(state), reward(0), cnt(0), children(nullptr), turn(turn), depth(depth) {}
+    MCTSnode(State state, board_t turn, char depth) : state(state), reward(0), cnt(0), children(nullptr), turn(turn), depth(depth) {}
     MCTSnode() : state(State{}), reward(0), cnt(0), children(nullptr), turn(-1), depth(0) {}
 };
 std::ostream& operator<<(std::ostream& os, const MCTSnode& node) {
@@ -228,7 +229,7 @@ std::ostream& operator<<(std::ostream& os, const MCTSnode& node) {
     if (!node.children) {
         cerr << "null" << endl;
     } else {
-        for (auto &child : *node.children) cerr << child.turn << ',';
+        for (auto &child : *node.children) cerr << ffsll(child.turn) - 1 << ',';
         cerr << endl;
     }
     cerr << node.state;
