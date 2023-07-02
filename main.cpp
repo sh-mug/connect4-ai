@@ -35,9 +35,11 @@ MMNMM::splitmix64 engine(std::random_device{}());
 struct State {
     board_t me, opp;
     inline int count_fill() { return __builtin_popcountll(me | opp); }
-    score_opt eval() {
-        if (any_of(lines.begin(), lines.end(), [&](const board_t &line) { return (me & line) == line; })) return 2;
-        if (any_of(lines.begin(), lines.end(), [&](const board_t &line) { return (opp & line) == line; })) return -2;
+    inline score_opt eval() {
+        for (const board_t line : lines) {
+            if ((me & line) == line) return 2;
+            if ((opp & line) == line) return -2;
+        }
         if ((me | opp) == end_board) return 0;
         return nullopt;
     }
@@ -142,7 +144,7 @@ struct MCTSnode {
         ++cnt;
         return added_reward;
     }
-    reward_t eval() {
+    inline reward_t eval() {
         score_opt h = state.eval();
         if (h) return add_reward(h.value());
 
@@ -156,7 +158,7 @@ struct MCTSnode {
             return add_reward(-child_reward);
         }
     }
-    reward_t rollout() {
+    inline reward_t rollout() {
         bool is_me = true;
         State now_state = state;
         score_opt h;
@@ -168,42 +170,41 @@ struct MCTSnode {
         }
         return (is_me ? h.value() : -h.value());
     }
-    void expand() {
+    inline void expand() {
         children = make_unique<vector<MCTSnode>>();
         for (cell_t next_turn : state.children(depth == 1)) {
             children->push_back(MCTSnode{state.played(next_turn), next_turn, depth + 1});
         }
     }
-    MCTSnode *largest_ucb_child() {
+    inline MCTSnode *largest_ucb_child() {
         reward_t largest = -1e9;
-        size_t largest_idx = 0;
-        for (size_t i = 0; i < children->size(); ++i) {
-            auto &child = children->at(i);
+        MCTSnode *largest_child = nullptr;
+        for (MCTSnode &child : *children) {
             if (child.cnt == 0) return &child;
             reward_t ucb = (-child.reward / child.cnt) + C_UCB * sqrt(log((reward_t)cnt) / child.cnt);
             if (largest < ucb) {
                 largest = ucb;
-                largest_idx = i;
+                largest_child = &child;
             }
         }
-        return &children->at(largest_idx);
+        return largest_child;
     }
     MCTSnode *max_cnt_child() {
         int largest = -1e9;
-        size_t largest_idx = 0;
-        for (size_t i = 0; i < children->size(); ++i) {
-            auto &child = children->at(i);
+        MCTSnode *largest_child = nullptr;
+        for (MCTSnode &child : *children) {
+            if (child.cnt == 0) return &child;
             if (largest < child.cnt) {
                 largest = child.cnt;
-                largest_idx = i;
+                largest_child = &child;
             }
         }
-        return &children->at(largest_idx);
+        return largest_child;
     }
     void learn(long TL) {
         clock_t deadline = TL + clock();
         int num_sims = 0;
-        while ((++num_sims & 0xF) || clock() < deadline) {
+        while ((++num_sims & 0x1F) || clock() < deadline) {
             eval();
         }
         cerr << "#sim=" << num_sims << " reward=" << reward << endl;
