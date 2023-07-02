@@ -1,6 +1,7 @@
 #include <bits/stdc++.h>
 using namespace std;
 
+using turn_t = char;
 using cell_t = int;
 using board_t = unsigned long long;
 using score_t = int;
@@ -59,11 +60,11 @@ struct State {
     State reversed() {
         return State{opp, me};
     }
-    vector<cell_t> children(bool can_steal) {
-        vector<cell_t> res;
+    vector<turn_t> children(bool can_steal) {
+        vector<turn_t> res;
         board_t filled = me | opp;
         for (int x = 0; x < X; ++x) {
-            board_t cell = Y * x;
+            turn_t cell = Y * x;
             for (int y = 0; y < Y; ++y, ++cell) if (!(filled >> cell & 1)) {
                 res.push_back(cell);
                 break;
@@ -72,7 +73,7 @@ struct State {
         if (can_steal) res.push_back(-2);
         return res;
     }
-    State played(cell_t cell) {
+    State played(turn_t cell) {
         if (cell >= 0) return State{opp, me | (1ULL << cell)};
         return State{me, opp};
     }
@@ -121,7 +122,7 @@ Result alpha_beta(State state, int depth, score_t alpha, score_t beta) {
     }
 
     Result res = Result{alpha, -1};
-    for (const cell_t next_turn : state.children(false)) {
+    for (const turn_t next_turn : state.children(false)) {
         State next = state.played(next_turn);
         Result next_res = -alpha_beta(next, depth - 1, -beta, -alpha);
         if (res < next_res) res = Result{next_res.score, next_turn};
@@ -134,9 +135,8 @@ struct MCTSnode {
     State state;
     reward_t reward;
     int cnt;
+    char turn, depth;
     unique_ptr<vector<MCTSnode>> children;
-    int turn;
-    int depth;
 
     reward_t add_reward(reward_t added_reward) {
         assert(-2 <= added_reward && added_reward <= 2);
@@ -217,7 +217,7 @@ struct MCTSnode {
         return largest_child;
     }
     
-    MCTSnode(State state, cell_t turn, int depth) : state(state), reward(0), cnt(0), children(nullptr), turn(turn), depth(depth) {}
+    MCTSnode(State state, turn_t turn, char depth) : state(state), reward(0), cnt(0), children(nullptr), turn(turn), depth(depth) {}
     MCTSnode() : state(State{}), reward(0), cnt(0), children(nullptr), turn(-1), depth(0) {}
 };
 std::ostream& operator<<(std::ostream& os, const MCTSnode& node) {
