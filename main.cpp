@@ -1,15 +1,19 @@
 #include <bits/stdc++.h>
 using namespace std;
 
-// using turn_t = char;
-// using cell_t = int;
-using board_t = long long;
+using turn_t = char;
+using cell_t = int;
+using board_t = unsigned long long;
 using score_t = int;
 using score_opt = optional<score_t>;
 using reward_t = float;
 
 constexpr int Y = 7, X = 9, L = 4;
 constexpr std::array<board_t, 126> lines = { 0x0000000000204081, 0x0000000010204080, 0x0000000810204000, 0x0000040810200000, 0x0002040810000000, 0x0102040800000000, 0x0000000000408102, 0x0000000020408100, 0x0000001020408000, 0x0000081020400000, 0x0004081020000000, 0x0204081000000000, 0x000000000000000f, 0x0000000000000780, 0x000000000003c000, 0x0000000001e00000, 0x00000000f0000000, 0x0000007800000000, 0x00003c0000000000, 0x001e000000000000, 0x0f00000000000000, 0x0000000001010101, 0x0000000080808080, 0x0000004040404000, 0x0000202020200000, 0x0010101010000000, 0x0808080800000000, 0x0000000000208208, 0x0000000010410400, 0x0000000820820000, 0x0000041041000000, 0x0002082080000000, 0x0104104000000000, 0x0000000000810204, 0x0000000040810200, 0x0000002040810000, 0x0000102040800000, 0x0008102040000000, 0x0408102000000000, 0x000000000000001e, 0x0000000000000f00, 0x0000000000078000, 0x0000000003c00000, 0x00000001e0000000, 0x000000f000000000, 0x0000780000000000, 0x003c000000000000, 0x1e00000000000000, 0x0000000002020202, 0x0000000101010100, 0x0000008080808000, 0x0000404040400000, 0x0020202020000000, 0x1010101000000000, 0x0000000000410410, 0x0000000020820800, 0x0000001041040000, 0x0000082082000000, 0x0004104100000000, 0x0208208000000000, 0x0000000001020408, 0x0000000081020400, 0x0000004081020000, 0x0000204081000000, 0x0010204080000000, 0x0810204000000000, 0x000000000000003c, 0x0000000000001e00, 0x00000000000f0000, 0x0000000007800000, 0x00000003c0000000, 0x000001e000000000, 0x0000f00000000000, 0x0078000000000000, 0x3c00000000000000, 0x0000000004040404, 0x0000000202020200, 0x0000010101010000, 0x0000808080800000, 0x0040404040000000, 0x2020202000000000, 0x0000000000820820, 0x0000000041041000, 0x0000002082080000, 0x0000104104000000, 0x0008208200000000, 0x0410410000000000, 0x0000000002040810, 0x0000000102040800, 0x0000008102040000, 0x0000408102000000, 0x0020408100000000, 0x1020408000000000, 0x0000000000000078, 0x0000000000003c00, 0x00000000001e0000, 0x000000000f000000, 0x0000000780000000, 0x000003c000000000, 0x0001e00000000000, 0x00f0000000000000, 0x7800000000000000, 0x0000000008080808, 0x0000000404040400, 0x0000020202020000, 0x0001010101000000, 0x0080808080000000, 0x4040404000000000, 0x0000000001041040, 0x0000000082082000, 0x0000004104100000, 0x0000208208000000, 0x0010410400000000, 0x0820820000000000, 0x0000000004081020, 0x0000000204081000, 0x0000010204080000, 0x0000810204000000, 0x0040810200000000, 0x2040810000000000, 0x0000000008102040, 0x0000000408102000, 0x0000020408100000, 0x0001020408000000, 0x0081020400000000, 0x4081020000000000, };
+constexpr board_t MASK_VER = 0b0001111'0001111'0001111'0001111'0001111'0001111'0001111'0001111'0001111;
+constexpr board_t MASK_HOR = 0b0000000'0000000'0000000'1111111'1111111'1111111'1111111'1111111'1111111;
+constexpr board_t MASK_DG1 = 0b0000000'0000000'0000000'1111000'1111000'1111000'1111000'1111000'1111000;
+constexpr board_t MASK_DG2 = 0b0000000'0000000'0000000'0001111'0001111'0001111'0001111'0001111'0001111;
 constexpr board_t end_board = 0x7FFFFFFFFFFFFFFF;
 constexpr int EXPAND_COUNT = 10;
 constexpr reward_t C_UCB = 1.414213562373;
@@ -33,14 +37,24 @@ namespace MMNMM{
 }
 MMNMM::splitmix64 engine(std::random_device{}());
 
+inline bool is_win(const board_t board) {
+    board_t ver = board & (board >> 1);
+    ver &= (ver >> 2) & MASK_VER;
+    board_t hor = board & (board >> 7);
+    hor &= (hor >> 14) & MASK_HOR;
+    board_t dg1 = board & (board >> 6);
+    dg1 &= (dg1 >> 12) & MASK_DG1;
+    board_t dg2 = board & (board >> 8);
+    dg2 &= (dg2 >> 16) & MASK_DG2;
+    return ver | hor | dg1 | dg2;
+}
+
 struct State {
     board_t me, opp;
     inline int count_fill() { return __builtin_popcountll(me | opp); }
     inline score_opt eval() {
-        for (const board_t line : lines) {
-            if ((me & line) == line) return 2;
-            if ((opp & line) == line) return -2;
-        }
+        if (is_win(me)) return 2;
+        if (is_win(opp)) return -2;
         if ((me | opp) == end_board) return 0;
         return nullopt;
     }
@@ -60,12 +74,12 @@ struct State {
     State reversed() {
         return State{opp, me};
     }
-    vector<board_t> children(bool can_steal) {
-        vector<board_t> res;
+    vector<turn_t> children(bool can_steal) {
+        vector<turn_t> res;
         board_t filled = me | opp;
         for (int x = 0; x < X; ++x) {
-            board_t cell = 1LL << (Y * x);
-            for (int y = 0; y < Y; ++y, cell <<= 1) if (!(filled & cell)) {
+            turn_t cell = Y * x;
+            for (int y = 0; y < Y; ++y, ++cell) if (!(filled >> cell & 1)) {
                 res.push_back(cell);
                 break;
             }
@@ -73,8 +87,8 @@ struct State {
         if (can_steal) res.push_back(-2);
         return res;
     }
-    State played(board_t cell) {
-        if (cell >= 0) return State{opp, me | cell};
+    State played(turn_t cell) {
+        if (cell >= 0) return State{opp, me | (1ULL << cell)};
         return State{me, opp};
     }
 
@@ -85,7 +99,7 @@ struct State {
 std::ostream& operator<<(std::ostream& os, const State& st) {
     for (int y = Y - 1; y >= 0; --y) {
         for (int x = 0; x < X; ++x) {
-            board_t cell = 1LL << (Y * x + y);
+            board_t cell = 1ULL << (Y * x + y);
             os << (st.me & cell ? 'O' : st.opp & cell ? 'X' : '.')
                << (x + 1 == X ? '\n' : ' ');
         }
@@ -93,16 +107,16 @@ std::ostream& operator<<(std::ostream& os, const State& st) {
     return os;
 }
 
-inline int to_row(board_t cell) {
-    if (__builtin_popcountll(cell)) return (ffsll(cell) - 1) / Y;
+inline int to_row(cell_t cell) {
+    if (cell >= 0) return cell / Y;
     return cell;
 }
 struct Result {
-    score_t score; board_t cell;
+    score_t score; cell_t cell;
     int row() { return to_row(cell); }
 
     Result() : score(0), cell(-1) {}
-    Result(score_t score, board_t cell) : score(score), cell(cell) {}
+    Result(score_t score, cell_t cell) : score(score), cell(cell) {}
     Result operator-() const { return Result{-score, cell}; }
     bool operator<(const Result &rhs) const { return score < rhs.score; }
     bool operator>=(const Result &rhs) const { return score >= rhs.score; }
@@ -122,7 +136,7 @@ Result alpha_beta(State state, int depth, score_t alpha, score_t beta) {
     }
 
     Result res = Result{alpha, -1};
-    for (const board_t next_turn : state.children(false)) {
+    for (const turn_t next_turn : state.children(false)) {
         State next = state.played(next_turn);
         Result next_res = -alpha_beta(next, depth - 1, -beta, -alpha);
         if (res < next_res) res = Result{next_res.score, next_turn};
@@ -135,8 +149,7 @@ struct MCTSnode {
     State state;
     reward_t reward;
     int cnt;
-    board_t turn;
-    char depth;
+    char turn, depth;
     unique_ptr<vector<MCTSnode>> children;
 
     reward_t add_reward(reward_t added_reward) {
@@ -173,7 +186,7 @@ struct MCTSnode {
     }
     inline void expand() {
         children = make_unique<vector<MCTSnode>>();
-        for (board_t next_turn : state.children(depth == 1)) {
+        for (cell_t next_turn : state.children(depth == 1)) {
             children->push_back(MCTSnode{state.played(next_turn), next_turn, depth + 1});
         }
     }
@@ -213,23 +226,23 @@ struct MCTSnode {
     MCTSnode *choose_node() {
         MCTSnode *largest_child = max_cnt_child();
         for (const auto &child : *children) {
-            cerr << ffsll(child.turn) - 1 << ' ' << child.cnt << ' ' << child.reward << endl;
+            cerr << (int)child.turn << ' ' << child.cnt << ' ' << child.reward << endl;
         }
         return largest_child;
     }
     
-    MCTSnode(State state, board_t turn, char depth) : state(state), reward(0), cnt(0), children(nullptr), turn(turn), depth(depth) {}
+    MCTSnode(State state, turn_t turn, char depth) : state(state), reward(0), cnt(0), children(nullptr), turn(turn), depth(depth) {}
     MCTSnode() : state(State{}), reward(0), cnt(0), children(nullptr), turn(-1), depth(0) {}
 };
 std::ostream& operator<<(std::ostream& os, const MCTSnode& node) {
     cerr << "reward=" << node.reward;
     cerr << " count=" << node.cnt;
-    cerr << " turn=" << node.turn << endl;
+    cerr << " turn=" << (int)node.turn << endl;
     cerr << "children=";
     if (!node.children) {
         cerr << "null" << endl;
     } else {
-        for (auto &child : *node.children) cerr << ffsll(child.turn) - 1 << ',';
+        for (auto &child : *node.children) cerr << (int)child.turn << ',';
         cerr << endl;
     }
     cerr << node.state;
